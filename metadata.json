@@ -1,0 +1,6 @@
+{
+  "name": "Mikhmon PPPoE Monitor",
+  "description": "A modern, responsive dashboard interface for MikroTik RouterOS PPPoE & Hotspot Management, inspired by Mikhmon ROS.6 with real-time tracking, voucher generation, and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
