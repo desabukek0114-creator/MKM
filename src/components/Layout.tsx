@@ -33,6 +33,7 @@ interface LayoutProps {
   currentSystemUser: SystemUser | null;
   systemUsers: SystemUser[];
   onSwitchSystemUser: (user: SystemUser) => void;
+  onLogout?: () => void;
 }
 
 export default function Layout({
@@ -44,7 +45,8 @@ export default function Layout({
   onSwitchSession,
   currentSystemUser,
   systemUsers,
-  onSwitchSystemUser
+  onSwitchSystemUser,
+  onLogout
 }: LayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isRouterDropdownOpen, setIsRouterDropdownOpen] = useState(false);
@@ -394,6 +396,20 @@ export default function Layout({
                       )}
                     </button>
                   ))}
+                  {onLogout && (
+                    <div className="border-t border-slate-100 mt-1.5 pt-1.5 px-1.5">
+                      <button
+                        onClick={() => {
+                          setIsUserDropdownOpen(false);
+                          onLogout();
+                        }}
+                        className="w-full text-left px-2 py-2 hover:bg-rose-50 text-rose-600 hover:text-rose-700 font-semibold rounded-lg transition flex items-center gap-2"
+                      >
+                        <LogOut className="h-3.5 w-3.5" />
+                        <span>Keluar (Logout)</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
