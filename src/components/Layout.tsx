@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { RouterSession } from "../types.js";
+import { RouterSession, SystemUser } from "../types.js";
 import { 
   Cpu, 
   Menu, 
@@ -18,7 +18,9 @@ import {
   Layers, 
   Globe,
   Wifi,
-  TrendingUp
+  TrendingUp,
+  Zap,
+  Check
 } from "lucide-react";
 
 interface LayoutProps {
@@ -28,6 +30,9 @@ interface LayoutProps {
   sessions: RouterSession[];
   activeSessionId: string;
   onSwitchSession: (id: string) => void;
+  currentSystemUser: SystemUser | null;
+  systemUsers: SystemUser[];
+  onSwitchSystemUser: (user: SystemUser) => void;
 }
 
 export default function Layout({
@@ -36,10 +41,14 @@ export default function Layout({
   onViewChange,
   sessions,
   activeSessionId,
-  onSwitchSession
+  onSwitchSession,
+  currentSystemUser,
+  systemUsers,
+  onSwitchSystemUser
 }: LayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isRouterDropdownOpen, setIsRouterDropdownOpen] = useState(false);
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [isNotifyOpen, setIsNotifyOpen] = useState(false);
 
   const activeSession = sessions.find(s => s.id === activeSessionId) || sessions[0];
@@ -55,11 +64,38 @@ export default function Layout({
     { id: "hotspot-profiles", label: "Hotspot Profiles", icon: Layers },
     { id: "hotspot-active", label: "Hotspot Active Links", icon: Wifi },
     { id: "hotspot-bulk", label: "Voucher Generator", icon: Sparkles },
+    { id: "header-mikhmon", label: "Mikhmon Expired Engine", isHeader: true },
+    { id: "mikhmon-tools", label: "Mikhmon Integration", icon: Zap },
     { id: "header-system", label: "System & Laporan", isHeader: true },
     { id: "sales-report", label: "Laporan Penjualan", icon: TrendingUp },
     { id: "cli", label: "Router CLI Terminal", icon: Terminal },
+    { id: "system-users", label: "User System Admin", icon: ShieldCheck },
     { id: "settings", label: "Sesi Router Settings", icon: SettingsIcon },
   ];
+
+  // Role based filtering of menu items
+  const filteredMenuItems = menuItems.filter(item => {
+    if (item.isHeader) {
+      // Let's filter out headers if they have no visible child items below them
+      if (item.id === "header-mikhmon") {
+        return currentSystemUser?.role !== "cashier";
+      }
+      return true;
+    }
+    
+    const role = currentSystemUser?.role || "admin";
+    
+    if (role === "cashier") {
+      // Cashier cannot edit core profiles, router sessions, cli, or mikhmon scripts/system users
+      const restricted = ["profiles", "hotspot-profiles", "mikhmon-tools", "cli", "system-users", "settings"];
+      if (restricted.includes(item.id)) return false;
+    } else if (role === "operator") {
+      // Operator cannot edit router sessions or system-users
+      const restricted = ["settings", "system-users"];
+      if (restricted.includes(item.id)) return false;
+    }
+    return true;
+  });
 
   const handleSwitchRouter = (id: string) => {
     onSwitchSession(id);
@@ -130,7 +166,7 @@ export default function Layout({
 
         {/* Nav list */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {menuItems.map((item) => {
+          {filteredMenuItems.map((item) => {
             if (item.isHeader) {
               return (
                 <div 
@@ -220,7 +256,7 @@ export default function Layout({
 
             {/* Menu List */}
             <div className="space-y-1 overflow-y-auto flex-1">
-              {menuItems.map((item) => {
+              {filteredMenuItems.map((item) => {
                 if (item.isHeader) {
                   return (
                     <div 
@@ -317,15 +353,49 @@ export default function Layout({
 
             <div className="h-4 w-px bg-slate-200" />
 
-            {/* Admin identity block */}
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-slate-100 border border-slate-200 rounded-full">
-                <User className="h-4 w-4 text-slate-600" />
-              </div>
-              <div className="text-left text-xs leading-tight">
-                <p className="font-bold text-slate-800">Administrator</p>
-                <p className="text-[10px] text-slate-400 font-mono">Group: super-admin</p>
-              </div>
+            {/* Dynamic System User Switcher Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
+                className="flex items-center gap-2.5 p-1.5 hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-xl transition text-left"
+              >
+                <div className="p-2 bg-blue-50 border border-blue-100 text-blue-600 rounded-full">
+                  <User className="h-4 w-4" />
+                </div>
+                <div className="text-left text-xs leading-tight">
+                  <p className="font-bold text-slate-800">{currentSystemUser ? currentSystemUser.fullname : "Sistem User"}</p>
+                  <p className="text-[10px] text-slate-400 font-mono">Role: {currentSystemUser ? currentSystemUser.role.toUpperCase() : "GUEST"}</p>
+                </div>
+                <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+              </button>
+
+              {isUserDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-2xl z-40 py-1.5 text-xs animate-in fade-in duration-150">
+                  <div className="px-3 py-1.5 border-b border-slate-100 mb-1.5">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">Ganti User Aktif:</p>
+                  </div>
+                  {systemUsers.map(u => (
+                    <button
+                      key={u.id}
+                      onClick={() => {
+                        onSwitchSystemUser(u);
+                        setIsUserDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 hover:bg-slate-50 transition flex items-center justify-between ${
+                        currentSystemUser && u.id === currentSystemUser.id ? "text-blue-600 font-bold bg-blue-50/50" : "text-slate-600"
+                      }`}
+                    >
+                      <div className="truncate">
+                        <span className="block font-bold">{u.fullname}</span>
+                        <span className="text-[9px] text-slate-400 font-mono">@{u.username} ({u.role})</span>
+                      </div>
+                      {currentSystemUser && u.id === currentSystemUser.id && (
+                        <Check className="h-3.5 w-3.5 text-blue-600" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </header>

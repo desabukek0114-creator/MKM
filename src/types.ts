@@ -136,3 +136,33 @@ export interface SalesTransaction {
   operator: string;
 }
 
+export interface MikroTikScript {
+  id: string;
+  name: string;
+  source: string;
+  runCount: number;
+  lastStarted?: string;
+  comment?: string;
+}
+
+export interface MikroTikScheduler {
+  id: string;
+  name: string;
+  interval: string;
+  onEvent: string;
+  nextRun?: string;
+  runCount: number;
+  disabled: boolean;
+  comment?: string;
+}
+
+export interface SystemUser {
+  id: string;
+  username: string;
+  password?: string;
+  role: 'admin' | 'operator' | 'cashier';
+  fullname: string;
+  createdAt: string;
+}
+
+

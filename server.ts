@@ -170,6 +170,72 @@ const initialSales: Record<string, SalesTransaction[]> = {
   "session-2": []
 };
 
+// Seed data for MikroTik scripts & schedulers
+const initialScripts: Record<string, any[]> = {
+  "session-1": [
+    {
+      id: "scr-1",
+      name: "mikhmon_expired",
+      source: `# Mikhmon Expiry & Monitoring Script\n:local date [/system clock get date];\n:local time [/system clock get time];\n:log info "Running Mikhmon monitor expiry at $date $time";\n/ip hotspot user {\n  :foreach u in=[find where comment~"Exp:"] do={\n    :local name [get $u name];\n    :local comment [get $u comment];\n    # Simulate expired check\n    :log info "Checking $name: $comment";\n  }\n}`,
+      runCount: 5,
+      lastStarted: "2026-06-29 12:00:01",
+      comment: "Script otomatis Mikhmon untuk mematikan user expired"
+    },
+    {
+      id: "scr-2",
+      name: "backup_configuration",
+      source: `/system backup save name=auto-backup`,
+      runCount: 2,
+      lastStarted: "2026-06-25 00:00:00",
+      comment: "Auto backup"
+    }
+  ],
+  "session-2": [
+    {
+      id: "scr-3",
+      name: "mikhmon_expired",
+      source: `# Mikhmon Expiry & Monitoring Script\n:local date [/system clock get date];\n:local time [/system clock get time];\n:log info "Running Mikhmon monitor expiry at $date $time";\n/ip hotspot user {\n  :foreach u in=[find where comment~"Exp:"] do={\n    :local name [get $u name];\n    :local comment [get $u comment];\n    # Simulate expired check\n    :log info "Checking $name: $comment";\n  }\n}`,
+      runCount: 1,
+      lastStarted: "2026-06-29 16:30:11",
+      comment: "Script otomatis Mikhmon untuk mematikan user expired"
+    }
+  ]
+};
+
+const initialSchedulers: Record<string, any[]> = {
+  "session-1": [
+    {
+      id: "sched-1",
+      name: "mikhmon_expiry_check",
+      interval: "00:05:00",
+      onEvent: "mikhmon_expired",
+      nextRun: "2026-06-29 17:05:00",
+      runCount: 54,
+      disabled: false,
+      comment: "Cek user expired setiap 5 menit"
+    }
+  ],
+  "session-2": [
+    {
+      id: "sched-2",
+      name: "mikhmon_expiry_check",
+      interval: "00:05:00",
+      onEvent: "mikhmon_expired",
+      nextRun: "2026-06-29 17:05:00",
+      runCount: 12,
+      disabled: false,
+      comment: "Cek user expired setiap 5 menit"
+    }
+  ]
+};
+
+const systemUsers = [
+  { id: "sys-1", username: "admin", password: "123", role: "admin", fullname: "Administrator Utama", createdAt: "2026-01-01T00:00:00.000Z" },
+  { id: "sys-2", username: "kasir1", password: "123", role: "cashier", fullname: "Kasir Toko Utama", createdAt: "2026-06-20T10:00:00.000Z" },
+  { id: "sys-3", username: "operator1", password: "123", role: "operator", fullname: "Operator Jaringan", createdAt: "2026-06-25T14:30:00.000Z" }
+];
+
+
 // Seeding function for realistic Sales Report history
 function seedSalesTransactions() {
   const sessions = ["session-1", "session-2"];
@@ -255,6 +321,147 @@ function parseMikhmonComment(comment?: string) {
 
   return parsed;
 }
+
+function runMikroTikScriptSimulated(sessionId: string, scriptName: string, operatorName: string = "mikhmon_cron") {
+  // Find script and increment count
+  const scripts = initialScripts[sessionId] || [];
+  const script = scripts.find(s => s.name === scriptName);
+  const timeStr = new Date().toTimeString().split(' ')[0];
+  
+  if (script) {
+    script.runCount += 1;
+    script.lastStarted = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  }
+
+  // LOG ACTION
+  const logList = systemLogs[sessionId] || [];
+  logList.unshift({
+    id: "log-" + Math.random().toString(36).substring(2, 9),
+    time: timeStr,
+    topics: ["system", "info"],
+    message: `Script '${scriptName}' executed successfully`,
+    type: "info"
+  });
+
+  // If this is mikhmon_expired, let's scan for users whose comments contain "Exp:" and have expired dates, and disable them, logging sales!
+  if (scriptName === "mikhmon_expired") {
+    let expiredCount = 0;
+    let expiredRevenue = 0;
+    
+    // Scan Hotspot Users
+    const hsUsers = initialHotspotUsers[sessionId] || [];
+    const hsProfiles = initialHotspotProfiles[sessionId] || [];
+    
+    hsUsers.forEach(u => {
+      if (u.disabled) return;
+      const parsed = parseMikhmonComment(u.comment);
+      if (parsed && parsed.expiryDate) {
+        const expDate = new Date(parsed.expiryDate);
+        if (expDate < new Date()) {
+          // EXPIRED!
+          expiredCount++;
+          
+          // Get profile price
+          const profileObj = hsProfiles.find(p => p.name === u.profile);
+          const price = parsed.price || (profileObj ? profileObj.price : 0) || 0;
+          expiredRevenue += price;
+          
+          u.disabled = true;
+          u.comment = `Expired: ${parsed.expiryDate}, Price: ${price}`;
+
+          // Log user expiration
+          logList.unshift({
+            id: "log-" + Math.random().toString(36).substring(2, 9),
+            time: timeStr,
+            topics: ["hotspot", "info"],
+            message: `User ${u.name} has expired and was disabled (${u.profile})`,
+            type: "warning"
+          });
+
+          // Insert sale transaction
+          const salesList = initialSales[sessionId] || [];
+          salesList.unshift({
+            id: `tx-${sessionId}-${Math.random().toString(36).substring(2, 9)}`,
+            timestamp: new Date().toISOString(),
+            name: u.name,
+            service: "hotspot",
+            profile: u.profile,
+            price: price,
+            operator: operatorName
+          });
+          initialSales[sessionId] = salesList;
+        }
+      }
+    });
+
+    // Scan PPPoE Secrets
+    const pppSecrets = initialSecrets[sessionId] || [];
+    const pppProfiles = initialProfiles[sessionId] || [];
+    
+    pppSecrets.forEach(sec => {
+      if (sec.disabled) return;
+      const parsed = parseMikhmonComment(sec.comment);
+      if (parsed && parsed.expiryDate) {
+        const expDate = new Date(parsed.expiryDate);
+        if (expDate < new Date()) {
+          expiredCount++;
+          
+          // Get profile price
+          const profileObj = pppProfiles.find(p => p.name === sec.profile);
+          const price = parsed.price || (profileObj ? profileObj.price : 0) || 0;
+          expiredRevenue += price;
+          
+          sec.disabled = true;
+          sec.comment = `Expired: ${parsed.expiryDate}, Price: ${price}`;
+
+          // Log user expiration
+          logList.unshift({
+            id: "log-" + Math.random().toString(36).substring(2, 9),
+            time: timeStr,
+            topics: ["pppoe", "info"],
+            message: `PPPoE secret ${sec.name} has expired and was isolated (${sec.profile})`,
+            type: "warning"
+          });
+
+          // Insert sale transaction
+          const salesList = initialSales[sessionId] || [];
+          salesList.unshift({
+            id: `tx-${sessionId}-${Math.random().toString(36).substring(2, 9)}`,
+            timestamp: new Date().toISOString(),
+            name: sec.name,
+            service: "pppoe",
+            profile: sec.profile,
+            price: price,
+            operator: operatorName
+          });
+          initialSales[sessionId] = salesList;
+        }
+      }
+    });
+
+    if (expiredCount > 0) {
+      logList.unshift({
+        id: "log-" + Math.random().toString(36).substring(2, 9),
+        time: timeStr,
+        topics: ["system", "info"],
+        message: `Mikhmon expiry cleaner: disabled ${expiredCount} expired users. Total revenue reported: Rp ${expiredRevenue.toLocaleString()}`,
+        type: "success"
+      });
+    } else {
+      logList.unshift({
+        id: "log-" + Math.random().toString(36).substring(2, 9),
+        time: timeStr,
+        topics: ["system", "info"],
+        message: `Mikhmon expiry cleaner: Checked users, no expired users found.`,
+        type: "info"
+      });
+    }
+  }
+
+  systemLogs[sessionId] = logList;
+  return { success: true, message: `Script ${scriptName} executed successfully` };
+}
+
 
 // Function to generate simulated traffic rates
 function getSimulatedTraffic(sessionName: string) {
@@ -345,6 +552,30 @@ async function startServer() {
       { id: `hs-act-new-1`, name: "a84df", address: "192.168.88.15", macAddress: "AA:BB:CC:DD:EE:01", uptime: "00:32:15", bytesIn: 5029482, bytesOut: 12948102 }
     ];
 
+    initialScripts[newSession.id] = [
+      {
+        id: `scr-${newSession.id}-1`,
+        name: "mikhmon_expired",
+        source: `# Mikhmon Expiry & Monitoring Script\n:local date [/system clock get date];\n:local time [/system clock get time];\n:log info "Running Mikhmon monitor expiry at $date $time";\n/ip hotspot user {\n  :foreach u in=[find where comment~"Exp:"] do={\n    :local name [get $u name];\n    :local comment [get $u comment];\n    # Simulate expired check\n    :log info "Checking $name: $comment";\n  }\n}`,
+        runCount: 0,
+        comment: "Script otomatis Mikhmon untuk mematikan user expired"
+      }
+    ];
+
+    initialSchedulers[newSession.id] = [
+      {
+        id: `sched-${newSession.id}-1`,
+        name: "mikhmon_expiry_check",
+        interval: "00:05:00",
+        onEvent: "mikhmon_expired",
+        runCount: 0,
+        disabled: false,
+        comment: "Cek user expired setiap 5 menit"
+      }
+    ];
+
+    initialSales[newSession.id] = [];
+
     systemResources[newSession.id] = {
       uptime: "00h 15m 30s",
       cpuLoad: 2,
@@ -379,6 +610,9 @@ async function startServer() {
       delete initialHotspotActive[id];
       delete systemResources[id];
       delete systemLogs[id];
+      delete initialScripts[id];
+      delete initialSchedulers[id];
+      delete initialSales[id];
       return res.json({ success: true, message: "Session removed successfully" });
     }
     res.status(404).json({ error: "Session not found" });
@@ -1456,6 +1690,270 @@ async function startServer() {
     }
 
     res.json({ reply });
+  });
+
+  // -------------------------------------------------------------
+  // System User Management Endpoints
+  // -------------------------------------------------------------
+
+  app.get("/api/system/users", (req, res) => {
+    res.json(systemUsers);
+  });
+
+  app.post("/api/system/users", (req, res) => {
+    const { username, password, role, fullname } = req.body;
+    if (!username || !password || !role || !fullname) {
+      return res.status(400).json({ error: "Kolom username, password, role, dan nama lengkap wajib diisi!" });
+    }
+    const exists = systemUsers.some(u => u.username.toLowerCase() === username.toLowerCase());
+    if (exists) {
+      return res.status(400).json({ error: `Username '${username}' sudah digunakan!` });
+    }
+    const newUser = {
+      id: "sys-" + Math.random().toString(36).substring(2, 9),
+      username,
+      password,
+      role,
+      fullname,
+      createdAt: new Date().toISOString()
+    };
+    systemUsers.push(newUser);
+    res.status(201).json(newUser);
+  });
+
+  app.put("/api/system/users/:id", (req, res) => {
+    const { id } = req.params;
+    const { password, role, fullname } = req.body;
+    const idx = systemUsers.findIndex(u => u.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "User tidak ditemukan" });
+    }
+    const u = systemUsers[idx];
+    if (password) u.password = password;
+    if (role) u.role = role;
+    if (fullname) u.fullname = fullname;
+    res.json(u);
+  });
+
+  app.delete("/api/system/users/:id", (req, res) => {
+    const { id } = req.params;
+    const idx = systemUsers.findIndex(u => u.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "User tidak ditemukan" });
+    }
+    if (systemUsers[idx].username === "admin") {
+      return res.status(400).json({ error: "User administrator utama tidak boleh dihapus!" });
+    }
+    systemUsers.splice(idx, 1);
+    res.json({ success: true });
+  });
+
+  app.post("/api/system/users/login", (req, res) => {
+    const { username, password } = req.body;
+    const user = systemUsers.find(u => u.username === username && u.password === password);
+    if (user) {
+      res.json(user);
+    } else {
+      res.status(401).json({ error: "Username atau Password salah!" });
+    }
+  });
+
+  // -------------------------------------------------------------
+  // MikroTik Scripts & Schedulers Endpoints
+  // -------------------------------------------------------------
+
+  app.get("/api/router/:sessionId/scripts", (req, res) => {
+    const { sessionId } = req.params;
+    const scripts = initialScripts[sessionId] || [];
+    res.json(scripts);
+  });
+
+  app.post("/api/router/:sessionId/scripts", (req, res) => {
+    const { sessionId } = req.params;
+    const { name, source, comment } = req.body;
+    if (!name || !source) {
+      return res.status(400).json({ error: "Nama dan isi source script wajib diisi!" });
+    }
+    const scripts = initialScripts[sessionId] || [];
+    if (scripts.some(s => s.name === name)) {
+      return res.status(400).json({ error: `Script dengan nama '${name}' sudah ada!` });
+    }
+    const newScript = {
+      id: "scr-" + Math.random().toString(36).substring(2, 9),
+      name,
+      source,
+      runCount: 0,
+      comment: comment || ""
+    };
+    scripts.push(newScript);
+    initialScripts[sessionId] = scripts;
+    res.status(201).json(newScript);
+  });
+
+  app.put("/api/router/:sessionId/scripts/:id", (req, res) => {
+    const { sessionId, id } = req.params;
+    const { name, source, comment } = req.body;
+    const scripts = initialScripts[sessionId] || [];
+    const idx = scripts.findIndex(s => s.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Script tidak ditemukan" });
+    }
+    const script = scripts[idx];
+    if (name) script.name = name;
+    if (source) script.source = source;
+    if (comment !== undefined) script.comment = comment;
+    res.json(script);
+  });
+
+  app.delete("/api/router/:sessionId/scripts/:id", (req, res) => {
+    const { sessionId, id } = req.params;
+    const scripts = initialScripts[sessionId] || [];
+    const idx = scripts.findIndex(s => s.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Script tidak ditemukan" });
+    }
+    scripts.splice(idx, 1);
+    res.json({ success: true });
+  });
+
+  app.post("/api/router/:sessionId/scripts/:id/run", (req, res) => {
+    const { sessionId, id } = req.params;
+    const { operator } = req.body;
+    const scripts = initialScripts[sessionId] || [];
+    const script = scripts.find(s => s.id === id);
+    if (!script) {
+      return res.status(404).json({ error: "Script tidak ditemukan" });
+    }
+    const result = runMikroTikScriptSimulated(sessionId, script.name, operator || "admin");
+    res.json(result);
+  });
+
+  app.get("/api/router/:sessionId/schedulers", (req, res) => {
+    const { sessionId } = req.params;
+    const scheds = initialSchedulers[sessionId] || [];
+    res.json(scheds);
+  });
+
+  app.post("/api/router/:sessionId/schedulers", (req, res) => {
+    const { sessionId } = req.params;
+    const { name, interval, onEvent, comment } = req.body;
+    if (!name || !interval || !onEvent) {
+      return res.status(400).json({ error: "Nama, interval, dan onEvent (nama script) wajib diisi!" });
+    }
+    const scheds = initialSchedulers[sessionId] || [];
+    if (scheds.some(s => s.name === name)) {
+      return res.status(400).json({ error: `Scheduler dengan nama '${name}' sudah ada!` });
+    }
+    const newSched = {
+      id: "sched-" + Math.random().toString(36).substring(2, 9),
+      name,
+      interval,
+      onEvent,
+      runCount: 0,
+      disabled: false,
+      comment: comment || ""
+    };
+    scheds.push(newSched);
+    initialSchedulers[sessionId] = scheds;
+    res.status(201).json(newSched);
+  });
+
+  app.put("/api/router/:sessionId/schedulers/:id", (req, res) => {
+    const { sessionId, id } = req.params;
+    const { name, interval, onEvent, comment, disabled } = req.body;
+    const scheds = initialSchedulers[sessionId] || [];
+    const idx = scheds.findIndex(s => s.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Scheduler tidak ditemukan" });
+    }
+    const sched = scheds[idx];
+    if (name) sched.name = name;
+    if (interval) sched.interval = interval;
+    if (onEvent) sched.onEvent = onEvent;
+    if (comment !== undefined) sched.comment = comment;
+    if (disabled !== undefined) sched.disabled = disabled;
+    res.json(sched);
+  });
+
+  app.delete("/api/router/:sessionId/schedulers/:id", (req, res) => {
+    const { sessionId, id } = req.params;
+    const scheds = initialSchedulers[sessionId] || [];
+    const idx = scheds.findIndex(s => s.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Scheduler tidak ditemukan" });
+    }
+    scheds.splice(idx, 1);
+    res.json({ success: true });
+  });
+
+  app.post("/api/router/:sessionId/schedulers/:id/toggle", (req, res) => {
+    const { sessionId, id } = req.params;
+    const scheds = initialSchedulers[sessionId] || [];
+    const sched = scheds.find(s => s.id === id);
+    if (!sched) {
+      return res.status(404).json({ error: "Scheduler tidak ditemukan" });
+    }
+    sched.disabled = !sched.disabled;
+    res.json(sched);
+  });
+
+  app.post("/api/router/:sessionId/mikhmon/install", (req, res) => {
+    const { sessionId } = req.params;
+    const scripts = initialScripts[sessionId] || [];
+    const scheds = initialSchedulers[sessionId] || [];
+
+    // Expire Script source
+    const scriptSource = `# Mikhmon Expiry & Monitoring Script\n:local date [/system clock get date];\n:local time [/system clock get time];\n:log info "Running Mikhmon monitor expiry at $date $time";\n/ip hotspot user {\n  :foreach u in=[find where comment~"Exp:"] do={\n    :local name [get $u name];\n    :local comment [get $u comment];\n    # Simulate expired check\n    :log info "Checking $name: $comment";\n  }\n}`;
+
+    // Add or update script
+    let expScript = scripts.find(s => s.name === "mikhmon_expired");
+    if (!expScript) {
+      expScript = {
+        id: "scr-" + Math.random().toString(36).substring(2, 9),
+        name: "mikhmon_expired",
+        source: scriptSource,
+        runCount: 0,
+        comment: "Script otomatis Mikhmon untuk mematikan user expired"
+      };
+      scripts.push(expScript);
+    } else {
+      expScript.source = scriptSource;
+    }
+
+    // Add or update scheduler
+    let expSched = scheds.find(s => s.name === "mikhmon_expiry_check");
+    if (!expSched) {
+      expSched = {
+        id: "sched-" + Math.random().toString(36).substring(2, 9),
+        name: "mikhmon_expiry_check",
+        interval: "00:05:00",
+        onEvent: "mikhmon_expired",
+        runCount: 0,
+        disabled: false,
+        comment: "Cek user expired setiap 5 menit"
+      };
+      scheds.push(expSched);
+    } else {
+      expSched.onEvent = "mikhmon_expired";
+      expSched.disabled = false;
+    }
+
+    initialScripts[sessionId] = scripts;
+    initialSchedulers[sessionId] = scheds;
+
+    // Log action
+    const timeStr = new Date().toTimeString().split(' ')[0];
+    const logList = systemLogs[sessionId] || [];
+    logList.unshift({
+      id: "log-" + Math.random().toString(36).substring(2, 9),
+      time: timeStr,
+      topics: ["system", "info"],
+      message: `Mikhmon Monitoring Integration Script & Scheduler successfully installed on router`,
+      type: "success"
+    });
+    systemLogs[sessionId] = logList;
+
+    res.json({ success: true, message: "Mikhmon Expiry Script & Scheduler berhasil diinstal!" });
   });
 
 

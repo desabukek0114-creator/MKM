@@ -1,5 +1,18 @@
 import React, { useState, useEffect } from "react";
-import { RouterSession, SystemResource, PppoeSecret, PppoeProfile, PppoeActive, MikroTikLog, BulkGeneratorConfig, HotspotUser, HotspotProfile, HotspotActive, SalesTransaction } from "./types.js";
+import { 
+  RouterSession, 
+  SystemResource, 
+  PppoeSecret, 
+  PppoeProfile, 
+  PppoeActive, 
+  MikroTikLog, 
+  BulkGeneratorConfig, 
+  HotspotUser, 
+  HotspotProfile, 
+  HotspotActive, 
+  SalesTransaction,
+  SystemUser
+} from "./types.js";
 import { RefreshCw } from "lucide-react";
 import Layout from "./components/Layout.js";
 import Dashboard from "./components/Dashboard.js";
@@ -15,6 +28,8 @@ import HotspotProfiles from "./components/HotspotProfiles.js";
 import HotspotActiveComponent from "./components/HotspotActive.js";
 import HotspotBulkGenerator from "./components/HotspotBulkGenerator.js";
 import SalesReport from "./components/SalesReport.js";
+import MikhmonTools from "./components/MikhmonTools.js";
+import SystemUsers from "./components/SystemUsers.js";
 
 export default function App() {
   const [sessions, setSessions] = useState<RouterSession[]>([]);
@@ -34,6 +49,10 @@ export default function App() {
   const [hotspotProfiles, setHotspotProfiles] = useState<HotspotProfile[]>([]);
   const [hotspotActive, setHotspotActive] = useState<HotspotActive[]>([]);
 
+  // System Users states
+  const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
+  const [currentSystemUser, setCurrentSystemUser] = useState<SystemUser | null>(null);
+
   // Sales specific data states
   const [salesTransactions, setSalesTransactions] = useState<SalesTransaction[]>([]);
 
@@ -43,6 +62,58 @@ export default function App() {
   // -------------------------------------------------------------
   // Data Fetching and Sync
   // -------------------------------------------------------------
+
+  const fetchSystemUsers = async () => {
+    try {
+      const res = await fetch("/api/system/users");
+      if (res.ok) {
+        const data: SystemUser[] = await res.json();
+        setSystemUsers(data);
+        
+        // Find stored user, otherwise default to admin
+        const storedUserJson = localStorage.getItem("currentSystemUser");
+        let activeUser: SystemUser | null = null;
+        if (storedUserJson) {
+          try {
+            const parsed = JSON.parse(storedUserJson);
+            activeUser = data.find(u => u.id === parsed.id) || null;
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        
+        if (!activeUser && data.length > 0) {
+          activeUser = data.find(u => u.username === "admin") || data[0];
+        }
+        
+        if (activeUser) {
+          setCurrentSystemUser(activeUser);
+          localStorage.setItem("currentSystemUser", JSON.stringify(activeUser));
+        }
+      }
+    } catch (err) {
+      console.error("Gagal memuat pengguna sistem:", err);
+    }
+  };
+
+  const handleSwitchSystemUser = (user: SystemUser) => {
+    setCurrentSystemUser(user);
+    localStorage.setItem("currentSystemUser", JSON.stringify(user));
+    
+    // Safety check: if the new role has restrictions, force back to dashboard
+    const role = user.role;
+    if (role === "cashier") {
+      const restrictedViews = ["profiles", "hotspot-profiles", "mikhmon-tools", "cli", "system-users", "settings"];
+      if (restrictedViews.includes(activeView)) {
+        setActiveView("dashboard");
+      }
+    } else if (role === "operator") {
+      const restrictedViews = ["settings", "system-users"];
+      if (restrictedViews.includes(activeView)) {
+        setActiveView("dashboard");
+      }
+    }
+  };
 
   // Fetch registered router sessions
   const fetchSessions = async () => {
@@ -104,6 +175,7 @@ export default function App() {
   // Initial Load
   useEffect(() => {
     fetchSessions();
+    fetchSystemUsers();
   }, []);
 
   // Update detail stats when switching sessions
@@ -459,6 +531,9 @@ export default function App() {
       sessions={sessions}
       activeSessionId={activeSessionId}
       onSwitchSession={handleSwitchSession}
+      currentSystemUser={currentSystemUser}
+      systemUsers={systemUsers}
+      onSwitchSystemUser={handleSwitchSystemUser}
     >
       {activeSession ? (
         <>
@@ -555,6 +630,20 @@ export default function App() {
               profiles={hotspotProfiles}
               onGenerateBulk={handleBulkGenerateHotspot}
               onPrintBatch={handlePrintBulk}
+            />
+          )}
+
+          {activeView === "mikhmon-tools" && (
+            <MikhmonTools
+              activeSession={activeSession}
+              onRefreshParent={() => fetchActiveRouterData(activeSessionId)}
+            />
+          )}
+
+          {activeView === "system-users" && (
+            <SystemUsers
+              currentSystemUser={currentSystemUser}
+              onUserChanged={fetchSystemUsers}
             />
           )}
 
